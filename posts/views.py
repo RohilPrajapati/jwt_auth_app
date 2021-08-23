@@ -1,18 +1,15 @@
 from django.http.response import Http404
-from rest_framework import pagination
-from rest_framework import views
-from config.settings import SIMPLE_JWT
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Author, Post
 from .serializers import AuthorSerializer, LoginSerializer, PostSerializer,RegisterSerializer
 from django.contrib.auth.hashers import make_password,check_password
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated,AllowAny
-from .tokens import decode_token
+from .tokens import decode_token , get_token
 from .paginations import PagePaginationCustom
-from config import settings
+from rest_framework import status
+
 """
     RegisterView Will take 4 data:
     name:
@@ -33,9 +30,9 @@ class RegisterView(APIView):
                 hash_password = make_password(password,salt=None,hasher='default')
                 author = Author(name = serializer.validated_data['name'],email=serializer.validated_data['email'],password =hash_password)
                 author.save()
-                return Response(serializer.data)
+                return Response(serializer.data,status= status.HTTP_201_CREATED)
         else:
-            return Response({'message':'User already exists'})
+            return Response({'message':'Email already already Register'},status=status.HTTP_400_BAD_REQUEST)
 
 
 """
@@ -55,24 +52,11 @@ class LoginView(APIView):
             # checking password is correct or not
             if not check_password(password,author.password):
                 raise AuthenticationFailed("Password is Incorrect")
-            refresh = RefreshToken.for_user(author)
-            
-            return Response({
-                'access':str(refresh.access_token),
-                'refresh':str(refresh)
-            })
+
+            tokens = get_token(author)
+            return Response(tokens)
         else:
             raise AuthenticationFailed("Error")
-
-
-
-
-
-
-
-
-
-
 
 """
     AuthorListView list the author that have been register in the database
@@ -92,6 +76,8 @@ class AuthorListView(APIView,PagePaginationCustom):
     PostListView list the post that is in database
     It allow get post http request
     get gives all the data that are available in database
+    get have pagination
+
     post take the data from author and store that data
     post take following data:
     title:
@@ -123,7 +109,7 @@ class PostListView(APIView,PagePaginationCustom):
 
         # saving the post instances
         post.save()
-        return Response(serializer.data)
+        return Response(serializer.data,status= status.HTTP_201_CREATED)
     
 
 
@@ -163,15 +149,15 @@ class PostDetailUpdateDeleteView(APIView):
                 post.title=serializer.validated_data['title']
                 post.body=serializer.validated_data['body']
             post.save()
-            return Response(serializer.data)
+            return Response(serializer.data,status=status.HTTP_201_CREATED)
+        else:
+            return Response("You are not authorized to update this post")
         
     def delete(self,request,pk):
-                # decode the token
-        payload = decode_token(request)
-        # extracting the user_id from payload
-        user_id = payload.get("user_id")
+        payload = decode_token(request)   # decode the token
+        user_id = payload.get("user_id")  # extracting the user_id from payload
         post = self.get_object(pk)
         if user_id == post.author_id:
             post.delete()
-            return Response("Post deleted")
-        return Response("you are not AUTHOR of the post")
+            return Response("Post deleted",status=status.HTTP_204_NO_CONTENT)
+        return Response("you are not AUTHOR of the post",status=status.HTTP_400_BAD_REQUEST)
